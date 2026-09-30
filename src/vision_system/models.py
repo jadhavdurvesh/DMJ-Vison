@@ -65,3 +65,13 @@ class AuditEvent(BaseModel):
     actor: str
     track_id: str | None = None
     occurred_at: datetime = Field(default_factory=utc_now)
+
+class ContinuityCandidate(BaseModel):
+    """An explainable, non-biometric handoff proposition between two tracks."""
+
+    track_id: str
+    score: Annotated[float, Field(ge=0, le=1)]
+    tier: str
+    route: str
+    elapsed_seconds: int
+    evidence: list[str]

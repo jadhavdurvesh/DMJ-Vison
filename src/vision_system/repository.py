@@ -5,7 +5,7 @@ from datetime import timedelta
 from threading import Lock
 from uuid import uuid4
 
-from .models import AuditEvent, Camera, Observation, Track, TrackState, TrackSummary, utc_now
+from .models import AuditEvent, Camera, ContinuityCandidate, Observation, Track, TrackState, TrackSummary, utc_now
 
 
 class VisionRepository:
@@ -19,6 +19,12 @@ class VisionRepository:
             "south-exit": Camera(id="south-exit", name="South exit", location="Level 1 · South"),
         }
         self.tracks: dict[str, Track] = {}
+        # The Continuity Mesh only permits handoffs along explicitly configured routes.
+        # Values are expected travel windows in seconds: (minimum, maximum).
+        self.topology = {
+            ("north-entry", "atrium"): (20, 360),
+            ("atrium", "south-exit"): (20, 480),
+        }
         self.audit_events: list[AuditEvent] = []
         self._seed_demo_data()
 
@@ -34,12 +40,16 @@ class VisionRepository:
             Observation(camera_id="north-entry", zone_id="entry", observed_at=now - timedelta(minutes=12), confidence=.90, direction="in", quality=.72),
             Observation(camera_id="atrium", zone_id="central-walkway", observed_at=now - timedelta(minutes=2), confidence=.64, direction="east", quality=.45),
         ]
+        handoff = Track(id="trk_ae10", state=TrackState.lost, created_at=now - timedelta(minutes=5), last_seen_at=now - timedelta(minutes=5))
+        handoff.observations = [
+            Observation(camera_id="north-entry", zone_id="entry", observed_at=now - timedelta(minutes=5), confidence=.89, direction="in", quality=.82),
+        ]
         third = Track(id="trk_3b18", state=TrackState.exited, created_at=now - timedelta(minutes=20), last_seen_at=now - timedelta(minutes=1))
         third.observations = [
             Observation(camera_id="atrium", zone_id="central-walkway", observed_at=now - timedelta(minutes=20), confidence=.82, direction="south", quality=.75),
             Observation(camera_id="south-exit", zone_id="exit", observed_at=now - timedelta(minutes=1), confidence=.91, direction="out", quality=.88),
         ]
-        self.tracks = {track.id: track for track in (first, second, third)}
+        self.tracks = {track.id: track for track in (first, second, handoff, third)}
 
     def list_tracks(self, state: TrackState | None = None) -> list[TrackSummary]:
         with self._lock:
@@ -54,6 +64,54 @@ class VisionRepository:
             if track and actor:
                 self.audit_events.append(AuditEvent(action="view_track", actor=actor, track_id=track_id))
             return track
+
+
+    def continuity_candidates(self, track_id: str, actor: str | None = None) -> list[ContinuityCandidate] | None:
+        """Return predecessor handoff propositions for a track.
+
+        DMJ Continuity Mesh uses only configured camera topology, elapsed travel time,
+        direction agreement, and existing observation quality/confidence. It never
+        treats a result as an identity match.
+        """
+        with self._lock:
+            target = self.tracks.get(track_id)
+            if target is None or target.last_observation is None:
+                return None
+            if actor:
+                self.audit_events.append(AuditEvent(action="view_continuity_candidates", actor=actor, track_id=track_id))
+            target_observation = target.last_observation
+            candidates: list[ContinuityCandidate] = []
+            for source in self.tracks.values():
+                if source.id == target.id or source.last_observation is None:
+                    continue
+                source_observation = source.last_observation
+                route_window = self.topology.get((source_observation.camera_id, target_observation.camera_id))
+                if route_window is None:
+                    continue
+                elapsed = int((target_observation.observed_at - source_observation.observed_at).total_seconds())
+                minimum, maximum = route_window
+                if elapsed < minimum or elapsed > maximum:
+                    continue
+                midpoint = (minimum + maximum) / 2
+                half_window = max((maximum - minimum) / 2, 1)
+                time_score = max(0.0, 1 - abs(elapsed - midpoint) / half_window)
+                quality_score = (source_observation.quality + target_observation.quality) / 2
+                detection_score = (source_observation.confidence + target_observation.confidence) / 2
+                direction_score = 1.0 if source_observation.direction in {"in", "south", "east"} else 0.5
+                score = round(0.35 + 0.25 * time_score + 0.2 * quality_score + 0.15 * detection_score + 0.05 * direction_score, 2)
+                tier = "review" if score >= .8 else "possible" if score >= .65 else "weak"
+                candidates.append(ContinuityCandidate(
+                    track_id=source.id, score=score, tier=tier,
+                    route=f"{source_observation.camera_id} → {target_observation.camera_id}",
+                    elapsed_seconds=elapsed,
+                    evidence=[
+                        "configured camera route",
+                        f"travel time {elapsed}s within {minimum}–{maximum}s window",
+                        f"observation quality {round(quality_score * 100)}%",
+                        f"detection confidence {round(detection_score * 100)}%",
+                    ],
+                ))
+            return sorted(candidates, key=lambda candidate: candidate.score, reverse=True)
 
     def create_observation(self, observation: Observation, track_id: str | None = None) -> Track:
         with self._lock:

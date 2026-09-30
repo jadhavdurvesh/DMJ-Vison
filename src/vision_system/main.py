@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Response
 from fastapi.responses import FileResponse
 
-from .models import Observation, Track, TrackState, TrackSummary
+from .models import ContinuityCandidate, Observation, Track, TrackState, TrackSummary
 from .repository import VisionRepository
 
 app = FastAPI(title="DMJ Vision", version="0.1.0", description="Privacy-aware vision operations API")
@@ -52,6 +52,14 @@ def get_track(track_id: str, x_operator: str | None = Header(default=None)) -> T
     if track is None:
         raise HTTPException(status_code=404, detail="Track not found")
     return track
+
+
+@app.get("/api/tracks/{track_id}/continuity-candidates", response_model=list[ContinuityCandidate])
+def continuity_candidates(track_id: str, x_operator: str | None = Header(default=None)) -> list[ContinuityCandidate]:
+    candidates = repository.continuity_candidates(track_id, actor=x_operator)
+    if candidates is None:
+        raise HTTPException(status_code=404, detail="Track not found")
+    return candidates
 
 
 @app.post("/api/tracks/{track_id}/observations", response_model=Track, status_code=201)

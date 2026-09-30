@@ -12,6 +12,7 @@ A runnable MVP for an **authorized-site, privacy-aware vision operations console
 - FastAPI endpoints for camera workers to create tracks and append observations.
 - Confidence and image-quality fields so uncertain matches are never presented as certain.
 - Header-based demonstration audit hook for timeline access.
+- **DMJ Continuity Mesh (DCM):** named topology-aware handoff propositions that combine route, time, direction, quality, and detector confidence without biometric matching.
 - Seeded sample data for an immediate working demonstration.
 
 ## Run locally
@@ -59,8 +60,13 @@ curl -X POST http://127.0.0.1:8000/api/tracks/trk_example/observations \
 | `GET /api/cameras` | Registered cameras. |
 | `GET /api/tracks` | Recent track summaries; supports `?state=active`. |
 | `GET /api/tracks/{id}` | Full observation history; supports `X-Operator` audit attribution. |
+| `GET /api/tracks/{id}/continuity-candidates` | Explainable DCM predecessor handoff propositions; supports `X-Operator` audit attribution. |
 | `POST /api/observations` | Create a pseudonymous track from a camera observation. |
 | `POST /api/tracks/{id}/observations` | Add a new observation to an existing track. |
+
+## DMJ Continuity Mesh
+
+The next implemented architecture step is **DMJ Continuity Mesh (DCM)**: an explicitly configured camera-topology graph that creates confidence-scored *handoff propositions* between anonymous tracks. It uses the physical route, bounded travel-time window, direction, observation quality, and detection confidence. A proposition is never an identity claim. Read the complete architecture vocabulary, formula, and safeguards in [`docs/dmj-continuity-mesh.md`](docs/dmj-continuity-mesh.md).
 
 ## Production roadmap
 

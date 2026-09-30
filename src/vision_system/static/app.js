@@ -13,7 +13,7 @@ async function load() {
   if (tracks.length) showTrack(tracks[0].id);
 }
 async function showTrack(id) {
-  const track = await fetch(`/api/tracks/${id}`, {headers: {'X-Operator': 'dashboard-demo'}}).then(r => r.json());
+  const [track, candidates] = await Promise.all([fetch(`/api/tracks/${id}`, {headers: {'X-Operator': 'dashboard-demo'}}).then(r => r.json()), fetch(`/api/tracks/${id}/continuity-candidates`, {headers: {'X-Operator': 'dashboard-demo'}}).then(r => r.json())]);
   const last = track.observations.at(-1);
   $('#track-title').textContent = track.id;
   $('#track-state').textContent = track.state;
@@ -21,6 +21,7 @@ async function showTrack(id) {
   $('#track-location').textContent = `${title(last.zone_id)} · ${title(last.camera_id)}`;
   $('#track-time').textContent = `Seen ${time(last.observed_at)} · ${Math.round(last.confidence * 100)}% association confidence`;
   $('#timeline').innerHTML = track.observations.slice().reverse().map(observation => `<li><span></span><div><strong>${title(observation.zone_id)}</strong><p>${title(observation.camera_id)} · ${time(observation.observed_at)} · quality ${Math.round(observation.quality * 100)}%</p></div></li>`).join('');
+  $('#continuity-list').innerHTML = candidates.length ? candidates.map(candidate => `<article class="candidate ${candidate.tier}"><div><strong>${candidate.track_id}</strong><p>${title(candidate.route)} · ${candidate.elapsed_seconds}s</p></div><span>${Math.round(candidate.score * 100)}% · ${candidate.tier}</span></article>`).join('') : '<p class="hint">No topology-valid predecessor is available.</p>';
   $('#track-empty').hidden = true; $('#track-details').hidden = false;
 }
 $('#refresh').addEventListener('click', load); load();
