@@ -95,7 +95,8 @@ def continuity_candidates(track_id: str, x_operator: str | None = Header(default
 
 
 @app.post("/api/tracks/{track_id}/observations", response_model=Track, status_code=201)
-def add_observation(track_id: str, observation: Observation) -> Track:
+def add_observation(track_id: str, observation: Observation, authorization: str | None = Header(default=None)) -> Track:
+    require_worker_token(authorization)
     try:
         return repository.create_observation(observation, track_id)
     except KeyError:
@@ -103,7 +104,8 @@ def add_observation(track_id: str, observation: Observation) -> Track:
 
 
 @app.post("/api/observations", response_model=Track, status_code=201)
-def create_track(observation: Observation, response: Response, track_id: str | None = Query(default=None, min_length=5, max_length=64)) -> Track:
+def create_track(observation: Observation, response: Response, track_id: str | None = Query(default=None, min_length=5, max_length=64), authorization: str | None = Header(default=None)) -> Track:
+    require_worker_token(authorization)
     response.headers["Cache-Control"] = "no-store"
     try:
         return repository.create_observation(observation, track_id)
