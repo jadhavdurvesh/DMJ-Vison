@@ -2,6 +2,13 @@ const $ = (selector) => document.querySelector(selector);
 const time = (value) => new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(value));
 const title = (value) => value.replaceAll('-', ' ').replace(/\b\w/g, (character) => character.toUpperCase());
 
+function connectCameraStream() {
+  const image = $('#camera-feed');
+  image.src = '/api/cameras/north-entry/stream';
+  image.onload = () => { $('#camera-placeholder').hidden = true; $('#stream-status').textContent = 'live'; };
+  image.onerror = () => { $('#camera-placeholder').hidden = false; $('#stream-status').textContent = 'waiting for worker'; setTimeout(connectCameraStream, 3000); };
+}
+
 async function load() {
   const [overview, tracks] = await Promise.all([fetch('/api/overview').then(r => r.json()), fetch('/api/tracks').then(r => r.json())]);
   $('#active').textContent = overview.active_tracks;
@@ -24,4 +31,4 @@ async function showTrack(id) {
   $('#continuity-list').innerHTML = candidates.length ? candidates.map(candidate => `<article class="candidate ${candidate.tier}"><div><strong>${candidate.track_id}</strong><p>${title(candidate.route)} · ${candidate.elapsed_seconds}s</p></div><span>${Math.round(candidate.score * 100)}% · ${candidate.tier}</span></article>`).join('') : '<p class="hint">No topology-valid predecessor is available.</p>';
   $('#track-empty').hidden = true; $('#track-details').hidden = false;
 }
-$('#refresh').addEventListener('click', load); load();
+$('#refresh').addEventListener('click', load); load(); connectCameraStream(); setInterval(load, 5000);
