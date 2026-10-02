@@ -43,10 +43,9 @@ def test_unknown_camera_is_rejected():
 
 
 def test_camera_stream_endpoint_exists():
-    response = client.get("/api/cameras/north-entry/stream", stream=True)
-    assert response.status_code == 200
-    assert "multipart/x-mixed-replace" in response.headers["content-type"]
-    response.close()
+    with client.stream("GET", "/api/cameras/north-entry/stream") as response:
+        assert response.status_code == 200
+        assert "multipart/x-mixed-replace" in response.headers["content-type"]
 
 
 def test_unknown_camera_stream_is_not_found():
