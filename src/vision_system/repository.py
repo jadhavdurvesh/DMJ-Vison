@@ -38,13 +38,14 @@ class VisionRepository:
         self.tracks = {track.id: track for track in (first, second, handoff, third)}
 
     def register_heartbeat(self, heartbeat: CameraHeartbeat, name: str, location: str) -> Camera:
+        received_at = utc_now()
         with self._lock:
             camera = self.cameras.get(heartbeat.camera_id)
             if camera is None:
                 camera = Camera(id=heartbeat.camera_id, name=name, location=location, status="online")
                 self.cameras[camera.id] = camera
             camera.status = "online"
-            camera.last_heartbeat_at = heartbeat.sent_at
+            camera.last_heartbeat_at = received_at
             camera.worker_id = heartbeat.worker_id
             return camera
 
