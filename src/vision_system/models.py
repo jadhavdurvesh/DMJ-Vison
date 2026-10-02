@@ -18,11 +18,7 @@ class TrackState(str, Enum):
 
 
 class Observation(BaseModel):
-    """A pseudonymous sighting emitted by a camera worker.
-
-    This MVP deliberately stores no names, face templates, or identity claims.
-    """
-
+    """A pseudonymous sighting emitted by a camera worker."""
     camera_id: Annotated[str, Field(min_length=1, max_length=64)]
     zone_id: Annotated[str, Field(min_length=1, max_length=64)]
     observed_at: datetime = Field(default_factory=utc_now)
@@ -57,7 +53,16 @@ class Camera(BaseModel):
     id: str
     name: str
     location: str
-    status: str = "online"
+    status: str = "offline"
+    last_heartbeat_at: datetime | None = None
+    last_frame_at: datetime | None = None
+    worker_id: str | None = None
+
+
+class CameraHeartbeat(BaseModel):
+    worker_id: Annotated[str, Field(min_length=1, max_length=128)]
+    camera_id: Annotated[str, Field(min_length=1, max_length=64)]
+    sent_at: datetime = Field(default_factory=utc_now)
 
 
 class AuditEvent(BaseModel):
@@ -66,9 +71,9 @@ class AuditEvent(BaseModel):
     track_id: str | None = None
     occurred_at: datetime = Field(default_factory=utc_now)
 
+
 class ContinuityCandidate(BaseModel):
     """An explainable, non-biometric handoff proposition between two tracks."""
-
     track_id: str
     score: Annotated[float, Field(ge=0, le=1)]
     tier: str
