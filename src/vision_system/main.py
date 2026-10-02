@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, Header, HTTPException, Response
+from fastapi import FastAPI, Header, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 
 from .models import ContinuityCandidate, Observation, Track, TrackState, TrackSummary
 from .repository import VisionRepository
 
-app = FastAPI(title="DMJ Vision", version="0.1.0", description="Privacy-aware vision operations API")
+app = FastAPI(title="DMJ Vision", version="0.2.0", description="Privacy-aware vision operations API")
 repository = VisionRepository()
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -71,6 +71,13 @@ def add_observation(track_id: str, observation: Observation) -> Track:
 
 
 @app.post("/api/observations", response_model=Track, status_code=201)
-def create_track(observation: Observation, response: Response) -> Track:
+def create_track(
+    observation: Observation,
+    response: Response,
+    track_id: str | None = Query(default=None, min_length=5, max_length=64),
+) -> Track:
     response.headers["Cache-Control"] = "no-store"
-    return repository.create_observation(observation)
+    try:
+        return repository.create_observation(observation, track_id)
+    except KeyError:
+        raise HTTPException(status_code=422, detail="Unknown camera_id") from None
