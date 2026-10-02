@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import urllib.parse
 import urllib.request
 
 from .detector import DetectorConfig, PersonDetector
@@ -9,9 +10,10 @@ from .pipeline import PipelineConfig, VisionPipeline
 from .tracker import IoUTracker
 
 
-def _post_observation(api_url: str, observation) -> dict:
+def _post_observation(api_url: str, track_id: str, observation) -> dict:
+    query = urllib.parse.urlencode({"track_id": track_id})
     request = urllib.request.Request(
-        f"{api_url.rstrip('/')}/api/observations",
+        f"{api_url.rstrip('/')}/api/observations?{query}",
         data=json.dumps(observation.model_dump(mode="json")).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -23,8 +25,8 @@ def _post_observation(api_url: str, observation) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description="DMJ Vision real-time camera worker")
     parser.add_argument("--source", default="0", help="Webcam index or video/RTSP URL")
-    parser.add_argument("--camera-id", default="camera-1")
-    parser.add_argument("--zone-id", default="default")
+    parser.add_argument("--camera-id", default="north-entry")
+    parser.add_argument("--zone-id", default="entry")
     parser.add_argument("--model", default="yolo11n.pt")
     parser.add_argument("--confidence", type=float, default=0.35)
     parser.add_argument("--device", default=None, help="Inference device, e.g. cpu or cuda:0")
@@ -37,8 +39,8 @@ def main() -> None:
         PipelineConfig(camera_id=args.camera_id, zone_id=args.zone_id),
     )
 
-    def handle(_, observation):
-        result = _post_observation(args.api_url, observation)
+    def handle(track, observation):
+        result = _post_observation(args.api_url, track.id, observation)
         print(f"{result['id']} | {observation.camera_id} | {observation.zone_id} | {observation.confidence:.2f}")
 
     pipeline.run(args.source, handle)
