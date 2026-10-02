@@ -30,13 +30,14 @@ def main() -> None:
     parser.add_argument("--model", default="yolo11n.pt")
     parser.add_argument("--confidence", type=float, default=0.35)
     parser.add_argument("--device", default=None, help="Inference device, e.g. cpu or cuda:0")
+    parser.add_argument("--publish-every", type=int, default=5, help="Publish telemetry every N processed frames")
     parser.add_argument("--api-url", default="http://127.0.0.1:8000", help="DMJ Vision API base URL")
     args = parser.parse_args()
 
     pipeline = VisionPipeline(
         PersonDetector(DetectorConfig(model=args.model, confidence=args.confidence, device=args.device)),
         IoUTracker(),
-        PipelineConfig(camera_id=args.camera_id, zone_id=args.zone_id),
+        PipelineConfig(camera_id=args.camera_id, zone_id=args.zone_id, publish_every=args.publish_every),
     )
 
     def handle(track, observation):
