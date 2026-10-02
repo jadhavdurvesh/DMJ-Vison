@@ -16,10 +16,13 @@ class PipelineConfig:
     zone_id: str = "unknown"
     display: bool = False
     direction: str | None = None
+    publish_every: int = 5
 
 
 class VisionPipeline:
     def __init__(self, detector: PersonDetector, tracker: IoUTracker, config: PipelineConfig) -> None:
+        if config.publish_every < 1:
+            raise ValueError("publish_every must be at least 1")
         self.detector = detector
         self.tracker = tracker
         self.config = config
@@ -27,6 +30,8 @@ class VisionPipeline:
     def process(self, frame: Frame) -> list[tuple[Track, Observation]]:
         detections = self.detector.detect(frame.image)
         tracks = self.tracker.update(detections)
+        if frame.index % self.config.publish_every != 0:
+            return []
         observed_at = datetime.fromtimestamp(frame.timestamp, tz=timezone.utc)
         events: list[tuple[Track, Observation]] = []
         for track in tracks:
