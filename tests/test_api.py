@@ -28,6 +28,15 @@ def test_new_observation_creates_pseudonymous_track():
     assert response.json()["id"].startswith("trk_")
 
 
+def test_worker_track_id_is_preserved_across_observations():
+    payload = {"camera_id":"north-entry","zone_id":"entry","confidence":0.81,"quality":0.7}
+    first = client.post("/api/observations?track_id=trk_worker1", json=payload)
+    second = client.post("/api/observations?track_id=trk_worker1", json={**payload, "confidence": 0.91})
+    assert first.status_code == second.status_code == 201
+    assert first.json()["id"] == second.json()["id"] == "trk_worker1"
+    assert len(second.json()["observations"]) == len(first.json()["observations"]) + 1
+
+
 def test_unknown_camera_is_rejected():
     response = client.post("/api/tracks/trk_any/observations", json={"camera_id":"unknown","zone_id":"x","confidence":0.8})
     assert response.status_code == 422
