@@ -17,8 +17,8 @@ class VisionRepository:
         self.cameras: dict[str, Camera] = {}
         self.tracks: dict[str, Track] = {}
         self.topology = {
-            ("north-entry", "atrium"): (20, 360),
-            ("atrium", "south-exit"): (20, 480),
+            ("north-entry", "atrium"): (20, 360, {"in", "south", "east"}, {"south", "east", "out"}),
+            ("atrium", "south-exit"): (20, 480, {"south", "east"}, {"out"}),
         }
         self.audit_events: list[AuditEvent] = []
         if settings.mode == "demo":
@@ -57,12 +57,17 @@ class VisionRepository:
 
     def refresh_camera_status(self) -> None:
         cutoff = utc_now() - timedelta(seconds=settings.heartbeat_timeout_seconds)
+        stale_track_cutoff = utc_now() - timedelta(seconds=settings.track_stale_seconds)
         with self._lock:
             for camera in self.cameras.values():
                 if camera.status != "demo" and (camera.last_heartbeat_at is None or camera.last_heartbeat_at < cutoff):
                     camera.status = "offline"
+            for track in self.tracks.values():
+                if track.state == TrackState.active and track.last_seen_at < stale_track_cutoff:
+                    track.state = TrackState.lost
 
     def list_tracks(self, state: TrackState | None = None) -> list[TrackSummary]:
+        self.refresh_camera_status()
         with self._lock:
             tracks = self.tracks.values()
             if state:
@@ -70,6 +75,7 @@ class VisionRepository:
             return sorted((self._summary(track) for track in tracks), key=lambda track: track.last_seen_at, reverse=True)
 
     def get_track(self, track_id: str, actor: str | None = None) -> Track | None:
+        self.refresh_camera_status()
         with self._lock:
             track = self.tracks.get(track_id)
             if track and actor:
@@ -77,6 +83,7 @@ class VisionRepository:
             return track
 
     def continuity_candidates(self, track_id: str, actor: str | None = None) -> list[ContinuityCandidate] | None:
+        self.refresh_camera_status()
         with self._lock:
             target = self.tracks.get(track_id)
             if target is None or target.last_observation is None:
@@ -89,11 +96,11 @@ class VisionRepository:
                 if source.id == target.id or source.last_observation is None:
                     continue
                 source_observation = source.last_observation
-                route_window = self.topology.get((source_observation.camera_id, target_observation.camera_id))
-                if route_window is None:
+                topology = self.topology.get((source_observation.camera_id, target_observation.camera_id))
+                if topology is None:
                     continue
+                minimum, maximum, source_directions, target_directions = topology
                 elapsed = int((target_observation.observed_at - source_observation.observed_at).total_seconds())
-                minimum, maximum = route_window
                 if elapsed < minimum or elapsed > maximum:
                     continue
                 midpoint = (minimum + maximum) / 2
@@ -101,10 +108,10 @@ class VisionRepository:
                 time_score = max(0.0, 1 - abs(elapsed - midpoint) / half_window)
                 quality_score = (source_observation.quality + target_observation.quality) / 2
                 detection_score = (source_observation.confidence + target_observation.confidence) / 2
-                direction_score = 1.0 if source_observation.direction in {"in", "south", "east"} else 0.5
+                direction_score = 1.0 if source_observation.direction in source_directions and target_observation.direction in target_directions else 0.0
                 score = round(0.35 + 0.25 * time_score + 0.2 * quality_score + 0.15 * detection_score + 0.05 * direction_score, 2)
                 tier = "review" if score >= .8 else "possible" if score >= .65 else "weak"
-                candidates.append(ContinuityCandidate(track_id=source.id, score=score, tier=tier, route=f"{source_observation.camera_id} → {target_observation.camera_id}", elapsed_seconds=elapsed, evidence=["configured camera route", f"travel time {elapsed}s within {minimum}–{maximum}s window", f"observation quality {round(quality_score * 100)}%", f"detection confidence {round(detection_score * 100)}%"]))
+                candidates.append(ContinuityCandidate(track_id=source.id, score=score, tier=tier, route=f"{source_observation.camera_id} → {target_observation.camera_id}", elapsed_seconds=elapsed, evidence=["configured camera route", f"travel time {elapsed}s within {minimum}–{maximum}s window", f"observation quality {round(quality_score * 100)}%", f"detection confidence {round(detection_score * 100)}%", f"direction compatibility {round(direction_score * 100)}%"]))
             return sorted(candidates, key=lambda candidate: candidate.score, reverse=True)
 
     def create_observation(self, observation: Observation, track_id: str | None = None) -> Track:
@@ -127,7 +134,7 @@ class VisionRepository:
         with self._lock:
             states = Counter(track.state.value for track in self.tracks.values())
             zones = Counter(track.last_observation.zone_id for track in self.tracks.values() if track.state == TrackState.active and track.last_observation)
-            online = sum(camera.status in {"online", "demo"} for camera in self.cameras.values())
+            online = sum(camera.status == "online" for camera in self.cameras.values())
             return {"mode": settings.mode, "active_tracks": states["active"], "lost_tracks": states["lost"], "exited_tracks": states["exited"], "zone_occupancy": zones, "camera_count": len(self.cameras), "online_camera_count": online}
 
     def _summary(self, track: Track) -> TrackSummary:
