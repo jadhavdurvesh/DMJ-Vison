@@ -42,6 +42,17 @@ def test_unknown_camera_is_rejected():
     assert response.status_code == 422
 
 
+def test_camera_stream_endpoint_exists():
+    response = client.get("/api/cameras/north-entry/stream", stream=True)
+    assert response.status_code == 200
+    assert "multipart/x-mixed-replace" in response.headers["content-type"]
+    response.close()
+
+
+def test_unknown_camera_stream_is_not_found():
+    assert client.get("/api/cameras/missing/stream").status_code == 404
+
+
 def test_continuity_mesh_returns_explainable_topology_candidate():
     response = client.get("/api/tracks/trk_7f2a/continuity-candidates", headers={"X-Operator": "test-user"})
     assert response.status_code == 200
