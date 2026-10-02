@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from vision_system.main import app
+from vision_system.stream import stream_hub
 
 client = TestClient(app)
 
@@ -10,6 +11,15 @@ def test_health_and_dashboard_are_available():
     response = client.get("/")
     assert response.status_code == 200
     assert "OPERATIONS CONSOLE" in response.text
+
+
+def test_demo_mode_is_explicit_and_cameras_are_demo():
+    overview = client.get("/api/overview").json()
+    assert overview["mode"] == "demo"
+    cameras = client.get("/api/cameras").json()
+    assert len(cameras) == 3
+    assert all(camera["status"] == "demo" for camera in cameras)
+    assert client.get("/api/health").json()["mode"] == "demo"
 
 
 def test_overview_and_track_timeline():
@@ -23,13 +33,13 @@ def test_overview_and_track_timeline():
 
 
 def test_new_observation_creates_pseudonymous_track():
-    response = client.post("/api/observations", json={"camera_id":"atrium","zone_id":"central-walkway","confidence":0.81,"quality":0.7})
+    response = client.post("/api/observations", json={"camera_id": "atrium", "zone_id": "central-walkway", "confidence": 0.81, "quality": 0.7})
     assert response.status_code == 201
     assert response.json()["id"].startswith("trk_")
 
 
 def test_worker_track_id_is_preserved_across_observations():
-    payload = {"camera_id":"north-entry","zone_id":"entry","confidence":0.81,"quality":0.7}
+    payload = {"camera_id": "north-entry", "zone_id": "entry", "confidence": 0.81, "quality": 0.7}
     first = client.post("/api/observations?track_id=trk_worker1", json=payload)
     second = client.post("/api/observations?track_id=trk_worker1", json={**payload, "confidence": 0.91})
     assert first.status_code == second.status_code == 201
@@ -38,11 +48,12 @@ def test_worker_track_id_is_preserved_across_observations():
 
 
 def test_unknown_camera_is_rejected():
-    response = client.post("/api/tracks/trk_any/observations", json={"camera_id":"unknown","zone_id":"x","confidence":0.8})
+    response = client.post("/api/tracks/trk_any/observations", json={"camera_id": "unknown", "zone_id": "x", "confidence": 0.8})
     assert response.status_code == 422
 
 
-def test_camera_stream_endpoint_exists():
+def test_camera_stream_endpoint_returns_mjpeg():
+    stream_hub.publish("north-entry", b"\xff\xd8demo-jpeg")
     with client.stream("GET", "/api/cameras/north-entry/stream") as response:
         assert response.status_code == 200
         assert "multipart/x-mixed-replace" in response.headers["content-type"]
